@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+
+:root {
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --background-light: #f3f4f6;
+  --background-white: #ffffff;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --background-dark: #1f2937;
+  --background-dark-secondary: #374151;
+  --text-dark-primary: #ffffff;
+  --text-dark-secondary: #f9fafb;
+  --border-dark: #4b5563;
+}
+
+/* Light theme (default) */
+.light {
+  --background: var(--background-light);
+  --background-secondary: var(--background-white);
+  --text-color: var(--text-primary);
+  --text-secondary-color: var(--text-secondary);
+  --border: var(--border-color);
+  --chat-bubble-sent: var(--primary-color);
+  --chat-bubble-received: #e5e7eb;
+  --chat-bubble-text-sent: #ffffff;
+  --chat-bubble-text-received: var(--text-primary);
+}
+
+/* Dark theme */
+.dark {
+  --background: var(--background-dark);
+  --background-secondary: var(--background-dark-secondary);
+  --text-color: var(--text-dark-primary);
+  --text-secondary-color: var(--text-dark-secondary);
+  --border: var(--border-dark);
+  --chat-bubble-sent: var(--primary-color);
+  --chat-bubble-received: #4b5563;
+  --chat-bubble-text-sent: #ffffff;
+  --chat-bubble-text-received: var(--text-dark-primary);
+}
+
+/* Apply theme variables */
+body {
+  background-color: var(--background);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* General component styles */
+.bg-white {
+  background-color: var(--background-secondary);
+}
+
+.bg-gray-100 {
+  background-color: var(--background);
+}
+
+.text-gray-500 {
+  color: var(--text-secondary-color);
+}
+
+.text-gray-600 {
+  color: var(--text-secondary-color);
+}
+
+.text-gray-900 {
+  color: var(--text-color);
+}
+
+.border-gray-200 {
+  border-color: var(--border);
+}
+
+.border-gray-300 {
+  border-color: var(--border);
+}
+
+.bg-blue-500 {
+  background-color: var(--primary-color);
+}
+
+.bg-blue-600 {
+  background-color: var(--primary-color);
+}
+
+.text-blue-500 {
+  color: var(--primary-color);
+}
+
+.text-blue-600 {
+  color: var(--primary-color);
+}
+
+.hover\:bg-blue-600:hover {
+  background-color: var(--primary-hover);
+}
+
+.hover\:bg-blue-700:hover {
+  background-color: var(--primary-hover);
+}
+
+.bg-gray-200 {
+  background-color: var(--border);
+}
+
+.bg-blue-50 {
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.border-blue-500 {
+  border-color: var(--primary-color);
+}
+
+.border-blue-600 {
+  border-color: var(--primary-color);
+}
+
+/* Chat-specific styles */
+.bg-blue-500.text-white {
+  background-color: var(--chat-bubble-sent);
+  color: var(--chat-bubble-text-sent);
+}
+
+.bg-white.text-gray-900 {
+  background-color: var(--chat-bubble-received);
+  color: var(--chat-bubble-text-received);
+}
+
+/* Settings page preview */
+.bg-gray-200.text-gray-900 {
+  background-color: var(--chat-bubble-received);
+  color: var(--chat-bubble-text-received);
+}
+
+.text-blue-100 {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Sidebar and other components */
+.bg-blue-100 {
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.text-blue-600 {
+  color: var(--primary-color);
+}
+
+.bg-blue-500\/10 {
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.group-hover\:bg-blue-200:hover {
+  background-color: rgba(37, 99, 235, 0.2);
+}
+
+.group-hover\:bg-blue-500\/20:hover {
+  background-color: rgba(37, 99, 235, 0.2);
+}
+
+/* Input and form elements */
+input, button {
+  background-color: var(--background-secondary);
+  color: var(--text-color);
+  border-color: var(--border);
+}
+
+input:focus {
+  border-color: var(--primary-color);
+  outline-color: var(--primary-color);
+}
+
+/* Skeleton loading states */
+.bg-gray-300 {
+  background-color: var(--border);
+}
+
+/* Error boundary */
+.bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.text-red-600 {
+  color: #ef4444;
+}
