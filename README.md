@@ -66,7 +66,7 @@ A modern, real-time chat application built with the MERN stack (MongoDB, Express
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/AnupamNeon/ChatApp.git
+   git clone https://github.com/AnupamNeon/Chat_app.git
    cd ChatApp
    ```
 
