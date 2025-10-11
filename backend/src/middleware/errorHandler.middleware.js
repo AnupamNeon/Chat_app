@@ -1,5 +1,12 @@
 export const errorHandler = (err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error:', err);
+
+  // Handle custom operational errors
+  if (err.isOperational) {
+    return res.status(err.statusCode).json({
+      message: err.message
+    });
+  }
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
@@ -10,11 +17,18 @@ export const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Mongoose duplicate key error
+  // Mongoose duplicate key error (for unique constraints)
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue)[0];
     return res.status(400).json({
-      message: `${field} already exists`
+      message: `${field === 'email' ? 'Email' : field} already exists`
+    });
+  }
+
+  // Mongoose CastError (invalid ObjectId)
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      message: 'Invalid ID format'
     });
   }
 
@@ -28,15 +42,18 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   // Cloudinary errors
-  if (err.message.includes('Cloudinary')) {
+  if (err.message && err.message.includes('Cloudinary')) {
     return res.status(400).json({ message: 'Image upload failed' });
   }
 
   // Default error
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
   res.status(err.status || 500).json({
-    message: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
-      : err.message,
-    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+    message: isDevelopment ? err.message : 'Internal server error',
+    ...(isDevelopment && { 
+      stack: err.stack,
+      error: err 
+    })
   });
 };

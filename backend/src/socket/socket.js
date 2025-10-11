@@ -23,20 +23,33 @@ const userSocketMap = {};
 
 io.use(async (socket, next) => {
   try {
-    let token = socket.handshake.auth.token || socket.handshake.headers.token;
+    // Try multiple ways to get the token
+    let token = socket.handshake.auth?.token;
     
-    // If no token in auth, try to get from cookies
+    // Try from cookies
     if (!token && socket.handshake.headers.cookie) {
       const cookies = socket.handshake.headers.cookie.split(';').reduce((acc, cookie) => {
         const [name, value] = cookie.trim().split('=');
-        acc[name] = value;
+        acc[name] = decodeURIComponent(value || '');
         return acc;
       }, {});
       token = cookies.jwt;
     }
     
+    // Try from auth userId (for reconnection)
+    const userId = socket.handshake.auth?.userId;
+    if (!token && userId) {
+      // Verify user exists
+      const user = await User.findById(userId);
+      if (user) {
+        socket.userId = user._id.toString();
+        return next();
+      }
+    }
+    
     if (!token) {
-      return next(new Error("Authentication error"));
+      console.log("No token found in socket handshake");
+      return next(new Error("Authentication error - No token provided"));
     }
 
     const decoded = verifyToken(token);
@@ -49,6 +62,7 @@ io.use(async (socket, next) => {
     socket.userId = user._id.toString();
     next();
   } catch (error) {
+    console.error("Socket authentication error:", error.message);
     next(new Error("Authentication error"));
   }
 });

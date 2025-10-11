@@ -1,13 +1,19 @@
-import { AuthService } from "../services/auth.service.js";
+import { createUser, validateUser } from "../middleware/auth.middleware.js";
 import { generateToken } from "../utils/jwt.utils.js";
 import { CloudinaryService } from "../services/cloudinary.service.js";
 import User from "../models/user.model.js";
+import { AppError } from "../utils/customError.js";
 
 export const signup = async (req, res, next) => {
   try {
     const { fullName, email, password } = req.body;
 
-    const user = await AuthService.createUser({ fullName, email, password });
+    // Additional validation
+    if (!fullName || !email || !password) {
+      throw new AppError('All fields are required', 400);
+    }
+
+    const user = await createUser({ fullName, email, password });
     
     generateToken(user._id, res);
 
@@ -26,9 +32,13 @@ export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const user = await AuthService.validateUser(email, password);
+    // Additional validation
+    if (!email || !password) {
+      throw new AppError('Email and password are required', 400);
+    }
+
+    const user = await validateUser(email, password);
     
-    // Update online status
     user.isOnline = true;
     await user.save();
 

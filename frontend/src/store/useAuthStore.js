@@ -1,11 +1,9 @@
-// FILE: g:\Chat-App\frontend\src\store\useAuthStore.js
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
-const SERVER_URL = import.meta.env.VITE_API_BASE_URL
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5000" : SERVER_URL;
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -85,46 +83,59 @@ export const useAuthStore = create((set, get) => ({
 
   connectSocket: () => {
     const { authUser, socket } = get();
-    
+
     if (!authUser) {
-      console.log("❌ No auth user, skipping socket connection");
+      // console.log("❌ No auth user, skipping socket connection");
       return;
     }
 
     // Disconnect existing socket if any
     if (socket?.connected) {
-      console.log("🔌 Disconnecting existing socket");
+      // console.log("🔌 Disconnecting existing socket");
       socket.disconnect();
       socket.removeAllListeners();
     }
 
-    console.log("🔄 Attempting to connect socket...");
+    // console.log("🔄 Attempting to connect socket to:", SOCKET_URL);
 
-    // ✅ FIXED: Don't try to manually extract httpOnly cookie
-    // Just use withCredentials to automatically send cookies
-    const newSocket = io(BASE_URL, {
-      withCredentials: true, // This sends httpOnly cookies automatically
+    // Create new socket connection
+    const newSocket = io(SOCKET_URL, {
+      withCredentials: true,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 10000,
+      timeout: 20000,
+      auth: {
+        userId: authUser._id  // Send userId in auth for fallback
+      }
     });
 
     // Connection event handlers
     newSocket.on("connect", () => {
-      console.log("✅ Socket connected successfully", newSocket.id);
+      // console.log("✅ Socket connected successfully", newSocket.id);
       set({ isConnected: true });
+      
+      // Request fresh online users list after connection
+      newSocket.emit("request-online-users");
     });
 
     newSocket.on("disconnect", (reason) => {
-      console.log("❌ Socket disconnected:", reason);
-      set({ isConnected: false, onlineUsers: [] });
+      // console.log("❌ Socket disconnected:", reason);
+      set({ isConnected: false });
       
+      // Handle different disconnect reasons
       if (reason === "io server disconnect") {
         // Server disconnected, try to reconnect manually
-        newSocket.connect();
+        setTimeout(() => {
+          if (get().authUser) {
+            newSocket.connect();
+          }
+        }, 1000);
+      } else if (reason === "transport close" || reason === "transport error") {
+        // Network issues, socket.io will auto-reconnect
+        console.log("Network issue, will auto-reconnect...");
       }
     });
 
@@ -132,44 +143,72 @@ export const useAuthStore = create((set, get) => ({
       console.error("❌ Socket connection error:", error.message);
       set({ isConnected: false });
       
-      // If authentication fails, logout user
-      if (error.message.includes("Authentication") || error.message.includes("authenticated")) {
-        console.error("Authentication failed, logging out...");
+      // Only logout if explicitly authentication failed
+      if (error.message?.includes("Authentication error")) {
+        // console.error("Authentication failed, logging out...");
+        toast.error("Session expired. Please login again.");
         setTimeout(() => {
           get().logout();
         }, 1000);
       }
     });
 
-    // Listen for online users
+    // Listen for online users updates
     newSocket.on("getOnlineUsers", (userIds) => {
-      console.log("👥 Online users updated:", userIds.length, "users");
+      // console.log("👥 Online users updated:", userIds.length, "users");
       set({ onlineUsers: Array.isArray(userIds) ? userIds : [] });
     });
 
     // Listen for user status changes
     newSocket.on("userStatusChanged", ({ userId, isOnline, lastSeen }) => {
-      console.log(`👤 User ${userId} is now:`, isOnline ? "online" : "offline");
+      // console.log(`👤 User ${userId} is now:`, isOnline ? "online" : "offline");
+      
+      set(state => {
+        const currentOnlineUsers = [...state.onlineUsers];
+        
+        if (isOnline) {
+          // Add user if not already in list
+          if (!currentOnlineUsers.includes(userId)) {
+            return { onlineUsers: [...currentOnlineUsers, userId] };
+          }
+        } else {
+          // Remove user from online list
+          return { onlineUsers: currentOnlineUsers.filter(id => id !== userId) };
+        }
+        
+        return state;
+      });
     });
 
     // Reconnection event handlers
     newSocket.on("reconnect", (attemptNumber) => {
       console.log(`✅ Socket reconnected after ${attemptNumber} attempts`);
       set({ isConnected: true });
+      toast.success("Connection restored");
+      
+      // Request fresh data after reconnection
+      newSocket.emit("request-online-users");
     });
 
     newSocket.on("reconnect_attempt", (attemptNumber) => {
       console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
+      if (attemptNumber === 1) {
+        toast.loading("Reconnecting...", { id: "reconnecting" });
+      }
     });
 
-    newSocket.on("reconnect_error", (error) => {
-      console.error("❌ Reconnection error:", error.message);
-    });
 
     newSocket.on("reconnect_failed", () => {
-      console.error("❌ Socket reconnection failed completely");
-      toast.error("Unable to connect. Please refresh the page.");
+      // console.error("❌ Socket reconnection failed completely");
+      toast.dismiss("reconnecting");
+      toast.error("Connection failed. Please refresh the page.");
       set({ isConnected: false });
+    });
+
+    // Custom events for better error handling
+    newSocket.on("error", (error) => {
+      // console.error("Socket error:", error);
+      toast.error(error.message || "Connection error occurred");
     });
 
     set({ socket: newSocket });
@@ -178,7 +217,7 @@ export const useAuthStore = create((set, get) => ({
   disconnectSocket: () => {
     const { socket } = get();
     if (socket) {
-      console.log("🔌 Disconnecting socket...");
+      // console.log("🔌 Disconnecting socket...");
       socket.disconnect();
       socket.removeAllListeners();
       set({ socket: null, isConnected: false, onlineUsers: [] });

@@ -1,10 +1,11 @@
-// FILE: g:\Chat-App\frontend\src\store\useChatStore.js
 import { create } from "zustand";
 import toast from "react-hot-toast";
 import { axiosInstance } from "../lib/axios";
 import { useAuthStore } from "./useAuthStore";
 
+const isDevelopment = import.meta.env.NODE_ENV === 'development';
 export const useChatStore = create((set, get) => ({
+
   messages: [],
   users: [],
   selectedUser: null,
@@ -12,6 +13,7 @@ export const useChatStore = create((set, get) => ({
   isMessagesLoading: false,
   isSendingMessage: false,
   typingUsers: [],
+  unreadCounts: {},
 
   getUsers: async () => {
     set({ isUsersLoading: true });
@@ -21,8 +23,9 @@ export const useChatStore = create((set, get) => ({
       if (Array.isArray(res.data)) {
         set({ users: res.data });
       } else {
-        console.warn("Unexpected response for users:", res.data);
-        set({ users: [] });
+        if (isDevelopment){
+          console.warn("Unexpected response for users:", res.data);
+        set({ users: [] })};
       }
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -39,7 +42,8 @@ export const useChatStore = create((set, get) => ({
 
   getMessages: async (userId) => {
     if (!userId) {
-      console.error("No user ID provided for getMessages");
+      if (isDevelopment)
+        console.error("No user ID provided for getMessages");
       return;
     }
 
@@ -49,6 +53,19 @@ export const useChatStore = create((set, get) => ({
       
       const messages = Array.isArray(res.data.messages) ? res.data.messages : [];
       set({ messages });
+      
+      // Mark messages as read if there are any unread ones
+      if (messages.length > 0) {
+        const unreadMessages = messages.filter(msg => 
+          msg.receiverId === useAuthStore.getState().authUser._id && 
+          msg.status !== 'read'
+        );
+        
+        if (unreadMessages.length > 0) {
+          // Mark all as read
+          await axiosInstance.patch(`/messages/${userId}/read-all`);
+        }
+      }
     } catch (error) {
       console.error("Error fetching messages:", error);
       const errorMessage = error.response?.data?.message || "Failed to load messages";
@@ -81,13 +98,16 @@ export const useChatStore = create((set, get) => ({
       createdAt: new Date().toISOString(),
     };
 
-    // Add optimistic message immediately
-    set({ messages: [...messages, optimisticMessage], isSendingMessage: true });
+    // Add optimistic message immediately for better UX
+    set({ 
+      messages: [...messages, optimisticMessage], 
+      isSendingMessage: true 
+    });
 
     try {
       const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData);
       
-      // ✅ Replace optimistic message with real message from server
+      // Replace optimistic message with real message from server
       set(state => ({
         messages: state.messages.map(msg =>
           msg._id === tempId ? res.data : msg
@@ -110,6 +130,8 @@ export const useChatStore = create((set, get) => ({
         errorMessage = error.response.data.message;
       } else if (error.response?.status === 413) {
         errorMessage = "Image too large. Please select a smaller image.";
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = "Request timeout. Please check your connection.";
       }
       
       toast.error(errorMessage);
@@ -140,6 +162,15 @@ export const useChatStore = create((set, get) => ({
   markMessageAsRead: async (messageId) => {
     try {
       await axiosInstance.patch(`/messages/${messageId}/read`);
+      
+      // Update local message status
+      set(state => ({
+        messages: state.messages.map(msg =>
+          msg._id === messageId
+            ? { ...msg, status: 'read', readAt: new Date() }
+            : msg
+        )
+      }));
     } catch (error) {
       console.error('Failed to mark message as read:', error);
     }
@@ -148,19 +179,19 @@ export const useChatStore = create((set, get) => ({
   subscribeToMessages: () => {
     const { selectedUser } = get();
     if (!selectedUser) {
-      console.log("No selected user for message subscription");
+      if (isDevelopment) console.log("No selected user for message subscription");
       return () => {};
     }
 
     const socket = useAuthStore.getState().socket;
     if (!socket) {
-      console.warn("No socket available for subscription");
+      if (isDevelopment) console.warn("No socket available for subscription");
       return () => {};
     }
 
-    console.log("📨 Subscribing to messages for user:", selectedUser._id);
+    if (isDevelopment) console.log("📨 Subscribing to messages for user:", selectedUser._id);
 
-    // Helper function to normalize IDs (handle both populated and string IDs)
+    // Helper function to normalize IDs
     const normalizeId = (id) => {
       if (!id) return null;
       return typeof id === 'object' ? id._id : id;
@@ -168,12 +199,12 @@ export const useChatStore = create((set, get) => ({
 
     // Handler for new messages
     const handleNewMessage = (newMessage) => {
-      const { selectedUser: currentSelectedUser, messages } = get();
+      const { selectedUser: currentSelectedUser } = get();
       const { authUser } = useAuthStore.getState();
       
       if (!currentSelectedUser || !authUser) return;
 
-      console.log("📩 New message received via socket:", newMessage._id);
+      if (isDevelopment) console.log("📩 New message received via socket:", newMessage);
 
       const senderId = normalizeId(newMessage.senderId);
       const receiverId = normalizeId(newMessage.receiverId);
@@ -186,43 +217,87 @@ export const useChatStore = create((set, get) => ({
         (senderId === myId && receiverId === currentUserId);
 
       if (isMessageForCurrentConversation) {
-        // ✅ FIXED: Check for duplicates including temp IDs
-        const messageExists = messages.some(msg => {
-          // Check if real message with same ID already exists
-          if (msg._id === newMessage._id) return true;
-          
-          // Check if this is replacing an optimistic message
-          // Optimistic messages have temp IDs and status 'sending'
-          if (msg.status === 'sending' && msg._id.startsWith('temp-')) {
-            // Check if content matches (same text/image, close timestamp)
-            const isSameMessage = 
-              msg.text === newMessage.text &&
-              msg.image === newMessage.image &&
-              Math.abs(new Date(msg.createdAt) - new Date(newMessage.createdAt)) < 5000;
-            
-            if (isSameMessage) {
-              console.log("⚠️ This is the server response for optimistic message, already replaced");
+        set(state => {
+          // Check if message already exists
+          const messageExists = state.messages.some(msg => {
+            // Check by ID
+            if (msg._id === newMessage._id) {
+              if (isDevelopment) console.log("⚠️ Message already exists by ID");
               return true;
             }
+            
+            // Check if this is replacing a temp message
+            if (msg._id?.startsWith('temp-') && msg.status === 'sending') {
+              // Check if it's the same message
+              const isSameMessage = 
+                msg.text === newMessage.text &&
+                msg.image === newMessage.image &&
+                normalizeId(msg.senderId) === senderId &&
+                normalizeId(msg.receiverId) === receiverId;
+              
+              if (isSameMessage) {
+                if (isDevelopment) console.log("✅ Found matching temp message to replace");
+                return false; // Will be replaced
+              }
+            }
+            
+            return false;
+          });
+
+          if (messageExists) {
+            return state; // Don't add duplicate
           }
-          
-          return false;
+
+          // Check if we need to replace a temp message
+          let updatedMessages = [...state.messages];
+          let wasReplaced = false;
+
+          updatedMessages = updatedMessages.map(msg => {
+            if (msg._id?.startsWith('temp-') && 
+                msg.status === 'sending' &&
+                msg.text === newMessage.text &&
+                msg.image === newMessage.image &&
+                normalizeId(msg.senderId) === senderId &&
+                normalizeId(msg.receiverId) === receiverId) {
+              if (isDevelopment) console.log("✅ Replacing temp message with real message");
+              wasReplaced = true;
+              return newMessage;
+            }
+            return msg;
+          });
+
+          // If not replaced, add as new message
+          if (!wasReplaced) {
+            if (isDevelopment) console.log("✅ Adding new message to conversation");
+            updatedMessages.push(newMessage);
+          }
+
+          return { messages: updatedMessages };
         });
 
-        if (!messageExists) {
-          console.log("✅ Adding new message from socket to conversation");
-          set(state => ({
-            messages: [...state.messages, newMessage]
-          }));
-
-          // If message is from other user, mark as read
-          if (senderId === currentUserId && newMessage._id) {
-            setTimeout(() => {
-              get().markMessageAsRead(newMessage._id);
-            }, 1000);
+        // Mark as read if from other user
+        if (senderId === currentUserId && newMessage._id && !newMessage._id.startsWith('temp-')) {
+          setTimeout(() => {
+            get().markMessageAsRead(newMessage._id);
+          }, 1000);
+        }
+      } else {
+        // Message for different conversation - update unread count
+       if (isDevelopment) console.log("📬 Message for different conversation, updating unread count");
+        set(state => ({
+          unreadCounts: {
+            ...state.unreadCounts,
+            [senderId]: (state.unreadCounts[senderId] || 0) + 1
           }
-        } else {
-          console.log("⚠️ Message already exists, skipping");
+        }));
+        
+        // Show notification
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+          const senderUser = get().users.find(u => u._id === senderId);
+          new Notification(`New message from ${senderUser?.fullName || 'Someone'}`, {
+            body: newMessage.text || 'Sent an image',
+            icon: senderUser?.profilePic || '/avatar.png'
+          });
         }
       }
     };
@@ -237,12 +312,21 @@ export const useChatStore = create((set, get) => ({
             ? [...new Set([...state.typingUsers, userId])]
             : state.typingUsers.filter(id => id !== userId)
         }));
+        
+        // Clear typing indicator after timeout
+        if (isTyping) {
+          setTimeout(() => {
+            set(state => ({
+              typingUsers: state.typingUsers.filter(id => id !== userId)
+            }));
+          }, 3000);
+        }
       }
     };
 
-    // Handler for message read status
+    // Handler for message read status updates
     const handleMessageRead = ({ messageId, readAt }) => {
-      console.log("✓✓ Message marked as read:", messageId);
+      if (isDevelopment) console.log("✓✓ Message marked as read:", messageId);
       set(state => ({
         messages: state.messages.map(msg =>
           msg._id === messageId
@@ -252,17 +336,36 @@ export const useChatStore = create((set, get) => ({
       }));
     };
 
+    // Handler for all messages read
+    const handleAllMessagesRead = ({ userId, conversationId }) => {
+      if (isDevelopment) console.log("✓✓ All messages marked as read by:", userId);
+      const { authUser } = useAuthStore.getState();
+      
+      if (authUser._id === userId) return; // Skip if it's our own action
+      
+      set(state => ({
+        messages: state.messages.map(msg => {
+          if (msg.senderId === authUser._id && msg.status !== 'read') {
+            return { ...msg, status: 'read', readAt: new Date() };
+          }
+          return msg;
+        })
+      }));
+    };
+
     // Attach event listeners
     socket.on("newMessage", handleNewMessage);
     socket.on("user-typing", handleUserTyping);
     socket.on("messageRead", handleMessageRead);
+    socket.on("allMessagesRead", handleAllMessagesRead);
 
     // Return cleanup function
     return () => {
-      console.log("🔌 Unsubscribing from messages");
+      if (isDevelopment) console.log("🔌 Unsubscribing from messages");
       socket.off("newMessage", handleNewMessage);
       socket.off("user-typing", handleUserTyping);
       socket.off("messageRead", handleMessageRead);
+      socket.off("allMessagesRead", handleAllMessagesRead);
     };
   },
 
@@ -272,17 +375,28 @@ export const useChatStore = create((set, get) => ({
       socket.off("newMessage");
       socket.off("user-typing");
       socket.off("messageRead");
+      socket.off("allMessagesRead");
     }
     // Clear typing users
     set({ typingUsers: [] });
   },
 
   setSelectedUser: (selectedUser) => {
-    console.log("👤 Setting selected user:", selectedUser?.fullName || "None");
+    if (isDevelopment) console.log("👤 Setting selected user:", selectedUser?.fullName || "None");
     
     // Stop typing for previous user
     get().stopTyping();
-    
+
+    // Clear unread count for this user
+    if (selectedUser) {
+      set(state => ({
+        unreadCounts: {
+          ...state.unreadCounts,
+          [selectedUser._id]: 0
+        }
+      }));
+    }
+
     set({ 
       selectedUser, 
       messages: [],
@@ -300,6 +414,12 @@ export const useChatStore = create((set, get) => ({
       isMessagesLoading: false,
       isSendingMessage: false,
       typingUsers: [],
+      unreadCounts: {},
     });
   },
 }));
+
+// Request notification permission on store initialization
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
