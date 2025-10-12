@@ -60,16 +60,6 @@ class ErrorBoundary extends Component {
                 Reload Page
               </button>
             </div>
-
-            {import.meta.env.NODE_ENV === 'development' && (
-              <details className="mt-4 text-left text-gray-700 dark:text-gray-300">
-                <summary className="cursor-pointer text-sm">Error Details</summary>
-                <pre className="text-xs mt-2 p-2 bg-gray-200 dark:bg-gray-700 rounded overflow-auto whitespace-pre-wrap">
-                  {this.state.error ? this.state.error.toString() : ''}
-                  {this.state.errorInfo ? this.state.errorInfo.componentStack : ''}
-                </pre>
-              </details>
-            )}
           </div>
         </div>
       );

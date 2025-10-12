@@ -14,10 +14,6 @@ export const axiosInstance = axios.create({
 // Add request interceptor for better error handling
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Log requests in development
-    if (import.meta.env.NODE_ENV === 'development') {
-      console.log(`📤 ${config.method?.toUpperCase()} ${config.url}`);
-    }
     return config;
   },
   (error) => {
