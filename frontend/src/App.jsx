@@ -1,6 +1,6 @@
-// FILE: g:\Chat-App\frontend\src\App.jsx
 import { useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Loader } from "lucide-react";
 import { Toaster } from "react-hot-toast";
 
@@ -11,95 +11,156 @@ import LoginPage from "./pages/LoginPage";
 import SettingsPage from "./pages/SettingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import ErrorBoundary from "./components/ErrorBoundary";
-import ConnectionStatus from "./components/ConnectionStatus"; // ✅ NEW
+import ConnectionStatus from "./components/ConnectionStatus";
 
 import { useAuthStore } from "./store/useAuthStore";
 import { useThemeStore } from "./store/useThemeStore";
 
+const PageTransition = ({ children }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.3 }}
+    >
+      {children}
+    </motion.div>
+  );
+};
+
 const App = () => {
   const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
-  const { theme } = useThemeStore();
+  const { theme, initTheme } = useThemeStore();
+  const location = useLocation();
 
-  // Check authentication on mount
+  // Initialize theme on mount
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
+
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
 
-  // Show loading spinner during auth check
   if (isCheckingAuth && !authUser) {
     return (
-      <div className={theme}>
-        <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
-          <div className="text-center">
-            <Loader className="w-10 h-10 animate-spin text-blue-500 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-          </div>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          >
+            <Loader className="w-10 h-10 text-blue-500 mx-auto mb-4" />
+          </motion.div>
+          <motion.p
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className="text-gray-600 dark:text-gray-400"
+          >
+            Loading...
+          </motion.p>
+        </motion.div>
       </div>
     );
   }
 
   return (
     <ErrorBoundary>
-      <div className={theme}>
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-          <Navbar />
-          
-          <Routes>
-            <Route 
-              path="/" 
-              element={authUser ? <HomePage /> : <Navigate to="/login" />} 
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <Navbar />
+        
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                authUser ? (
+                  <PageTransition>
+                    <HomePage />
+                  </PageTransition>
+                ) : (
+                  <Navigate to="/login" />
+                )
+              }
             />
-            <Route 
-              path="/signup" 
-              element={!authUser ? <SignUpPage /> : <Navigate to="/" />} 
+            <Route
+              path="/signup"
+              element={
+                !authUser ? (
+                  <PageTransition>
+                    <SignUpPage />
+                  </PageTransition>
+                ) : (
+                  <Navigate to="/" />
+                )
+              }
             />
-            <Route 
-              path="/login" 
-              element={!authUser ? <LoginPage /> : <Navigate to="/" />} 
+            <Route
+              path="/login"
+              element={
+                !authUser ? (
+                  <PageTransition>
+                    <LoginPage />
+                  </PageTransition>
+                ) : (
+                  <Navigate to="/" />
+                )
+              }
             />
-            <Route 
-              path="/settings" 
-              element={<SettingsPage />} 
+            <Route
+              path="/settings"
+              element={
+                <PageTransition>
+                  <SettingsPage />
+                </PageTransition>
+              }
             />
-            <Route 
-              path="/profile" 
-              element={authUser ? <ProfilePage /> : <Navigate to="/login" />} 
+            <Route
+              path="/profile"
+              element={
+                authUser ? (
+                  <PageTransition>
+                    <ProfilePage />
+                  </PageTransition>
+                ) : (
+                  <Navigate to="/login" />
+                )
+              }
             />
-            {/* Catch-all route */}
-            <Route 
-              path="*" 
-              element={<Navigate to="/" replace />} 
-            />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+        </AnimatePresence>
 
-          {/* ✅ NEW: Connection Status Indicator */}
-          <ConnectionStatus />
+        <ConnectionStatus />
 
-          <Toaster 
-            position="top-center"
-            toastOptions={{
-              duration: 3000,
-              style: {
-                background: theme === 'dark' ? '#1f2937' : '#ffffff',
-                color: theme === 'dark' ? '#f3f4f6' : '#1f2937',
-                border: `1px solid ${theme === 'dark' ? '#374151' : '#e5e7eb'}`,
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: theme === "dark" ? "#1f2937" : "#ffffff",
+              color: theme === "dark" ? "#f3f4f6" : "#1f2937",
+              border: `1px solid ${theme === "dark" ? "#374151" : "#e5e7eb"}`,
+            },
+            success: {
+              iconTheme: {
+                primary: "#10b981",
+                secondary: "#ffffff",
               },
-              success: {
-                iconTheme: {
-                  primary: '#10b981',
-                  secondary: '#ffffff',
-                },
+            },
+            error: {
+              iconTheme: {
+                primary: "#ef4444",
+                secondary: "#ffffff",
               },
-              error: {
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: '#ffffff',
-                },
-              },
-            }}
-          />
-        </div>
+            },
+          }}
+        />
       </div>
     </ErrorBoundary>
   );

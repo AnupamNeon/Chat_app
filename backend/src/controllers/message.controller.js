@@ -5,47 +5,35 @@ import { CloudinaryService } from "../services/cloudinary.service.js";
 import { getReceiverSocketId, io } from "../socket/socket.js";
 
 export const getMessages = async (req, res, next) => {
-  try {
-    const { id: userToChatId } = req.params;
-    const myId = req.user._id;
+  const { page = 1, limit = 50 } = req.query;
+  const skip = (page - 1) * limit;
 
-    // Validate userToChatId
-    if (!mongoose.Types.ObjectId.isValid(userToChatId)) {
-      return res.status(400).json({ message: "Invalid user ID" });
-    }
+  const conversation = await Conversation.findOne({
+    participants: { $all: participants },
+    $expr: { $eq: [{ $size: "$participants" }, 2] }
+  });
 
-    // Create sorted participants array for consistent lookup
-    const participants = [myId.toString(), userToChatId].sort();
-
-    // ✅ FIXED: Better conversation lookup
-    const conversation = await Conversation.findOne({
-      participants: { $all: participants },
-      $expr: { $eq: [{ $size: "$participants" }, 2] }
-    })
-    .populate('participants', 'fullName profilePic')
-    .populate('messages.senderId', 'fullName profilePic')
-    .populate('messages.receiverId', 'fullName profilePic');
-
-    if (!conversation) {
-      return res.status(200).json({
-        messages: [],
-        conversationId: null
-      });
-    }
-
-    // Sort messages by createdAt in ascending order (oldest first)
-    const sortedMessages = conversation.messages
-      .slice()
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    
-    res.status(200).json({
-      messages: sortedMessages,
-      conversationId: conversation._id
+  if (!conversation) {
+    return res.status(200).json({
+      messages: [],
+      pagination: { page: 1, totalPages: 0, total: 0 }
     });
-  } catch (error) {
-    console.error("Error in getMessages:", error);
-    next(error);
   }
+
+  const total = conversation.messages.length;
+  const messages = conversation.messages
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(skip, skip + limit)
+    .reverse();
+
+  res.status(200).json({
+    messages,
+    pagination: {
+      page: parseInt(page),
+      totalPages: Math.ceil(total / limit),
+      total
+    }
+  });
 };
 
 export const sendMessage = async (req, res, next) => {
@@ -267,43 +255,38 @@ export const markAllAsRead = async (req, res, next) => {
 };
 
 export const searchMessages = async (req, res, next) => {
-  try {
-    const { query } = req.query;
-    const userId = req.user._id;
+  const { query } = req.query;
+  const userId = req.user._id;
 
-    if (!query || query.trim().length < 2) {
-      return res.status(400).json({ message: "Search query must be at least 2 characters long" });
+  const results = await Conversation.aggregate([
+    { $match: { participants: userId } },
+    { $unwind: "$messages" },
+    { 
+      $match: { 
+        "messages.text": { 
+          $regex: query, 
+          $options: 'i' 
+        } 
+      } 
+    },
+    { $sort: { "messages.createdAt": -1 } },
+    { $limit: 50 },
+    {
+      $lookup: {
+        from: "users",
+        localField: "messages.senderId",
+        foreignField: "_id",
+        as: "sender"
+      }
+    },
+    {
+      $project: {
+        message: "$messages",
+        conversationId: "$_id",
+        sender: { $arrayElemAt: ["$sender", 0] }
+      }
     }
+  ]);
 
-    // Find all conversations for this user
-    const conversations = await Conversation.find({
-      participants: userId
-    })
-    .populate('participants', 'fullName profilePic');
-
-    // Search messages across all conversations
-    const searchResults = [];
-    
-    conversations.forEach(conversation => {
-      conversation.messages.forEach(message => {
-        if (message.text && message.text.toLowerCase().includes(query.toLowerCase())) {
-          searchResults.push({
-            ...message.toObject(),
-            conversationId: conversation._id,
-            participants: conversation.participants
-          });
-        }
-      });
-    });
-
-    // Sort by most recent first
-    searchResults.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    // Limit results
-    const limitedResults = searchResults.slice(0, 50);
-
-    res.status(200).json(limitedResults);
-  } catch (error) {
-    next(error);
-  }
+  res.status(200).json(results);
 };

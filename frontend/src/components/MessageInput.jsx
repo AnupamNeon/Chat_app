@@ -1,33 +1,28 @@
 import { useRef, useState, useCallback, useEffect } from "react";
+import { motion } from "framer-motion";
 import { useChatStore } from "../store/useChatStore";
-import { Image, Send, X } from "lucide-react";
+import { Image, Send, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-const TYPING_TIMEOUT = 2000; // Stop typing indicator after 2 seconds
+const TYPING_TIMEOUT = 2000;
 
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const fileInputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
-  const imageObjectUrlRef = useRef(null); // Track object URL for cleanup
+  const imageObjectUrlRef = useRef(null);
   
   const { sendMessage, selectedUser, startTyping, stopTyping, isSendingMessage } = useChatStore();
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // Stop typing indicator
       stopTyping();
-      
-      // Clear typing timeout
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      
-      // Revoke object URL to prevent memory leak
       if (imageObjectUrlRef.current) {
         URL.revokeObjectURL(imageObjectUrlRef.current);
         imageObjectUrlRef.current = null;
@@ -56,7 +51,6 @@ const MessageInput = () => {
 
   const compressImage = (file) => {
     return new Promise((resolve, reject) => {
-      // If image is already small enough, skip compression
       if (file.size <= 1024 * 1024) {
         resolve(file);
         return;
@@ -67,18 +61,17 @@ const MessageInput = () => {
       const img = new Image();
       
       img.onerror = () => {
-        URL.revokeObjectURL(img.src); // ✅ Cleanup on error
+        URL.revokeObjectURL(img.src);
         reject(new Error("Failed to load image"));
       };
 
       img.onload = () => {
-        URL.revokeObjectURL(img.src); // ✅ Cleanup after load
+        URL.revokeObjectURL(img.src);
         
         const MAX_WIDTH = 1200;
         const MAX_HEIGHT = 1200;
         let { width, height } = img;
 
-        // Calculate new dimensions
         if (width > height) {
           if (width > MAX_WIDTH) {
             height = (height * MAX_WIDTH) / width;
@@ -122,7 +115,6 @@ const MessageInput = () => {
     }
 
     try {
-      // Show loading state
       const loadingToast = toast.loading("Processing image...");
       
       const compressedFile = await compressImage(file);
@@ -150,7 +142,6 @@ const MessageInput = () => {
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     
-    // Revoke object URL if exists
     if (imageObjectUrlRef.current) {
       URL.revokeObjectURL(imageObjectUrlRef.current);
       imageObjectUrlRef.current = null;
@@ -160,7 +151,6 @@ const MessageInput = () => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     
-    // Validation
     if (!text.trim() && !imagePreview) return;
 
     if (!selectedUser) {
@@ -172,7 +162,6 @@ const MessageInput = () => {
     const currentImage = imagePreview;
 
     try {
-      // Clear input immediately for better UX
       setText("");
       setImagePreview(null);
       stopTyping();
@@ -183,7 +172,6 @@ const MessageInput = () => {
 
       await sendMessage({ text: currentText, image: currentImage });
     } catch (error) {
-      // Error already handled in store
       console.error("Failed to send message:", error);
     }
   };
@@ -199,22 +187,17 @@ const MessageInput = () => {
     const newText = e.target.value;
     setText(newText);
     
-    // Typing indicator logic
     if (newText.trim().length > 0) {
-      // Start typing indicator
       startTyping();
       
-      // Clear previous timeout
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
       
-      // Stop typing after inactivity
       typingTimeoutRef.current = setTimeout(() => {
         stopTyping();
       }, TYPING_TIMEOUT);
     } else {
-      // Stop typing if text is cleared
       stopTyping();
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -223,41 +206,47 @@ const MessageInput = () => {
   }, [startTyping, stopTyping]);
 
   return (
-    <div className="p-4 sm:p-6 w-full border-t border-border bg-background-secondary transition-all duration-300">
+    <div className="p-4 sm:p-6 w-full border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
       {imagePreview && (
-        <div className="mb-4 flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-300">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          className="mb-4 flex items-center gap-3"
+        >
           <div className="relative">
             <img
               src={imagePreview}
               alt="Preview"
-              className="w-20 h-20 object-cover rounded-lg border-2 border-blue-500 shadow-md hover:opacity-90 transition-opacity"
+              className="w-20 h-20 object-cover rounded-lg border-2 border-blue-500 shadow-md"
             />
-            <button
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={removeImage}
-              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 border-2 border-white flex items-center justify-center transition-colors duration-200 shadow-md"
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 border-2 border-white dark:border-gray-800 flex items-center justify-center shadow-md"
               type="button"
-              aria-label="Remove image"
             >
               <X className="w-4 h-4 text-white" />
-            </button>
+            </motion.button>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Image ready to send
           </p>
-        </div>
+        </motion.div>
       )}
 
       <form onSubmit={handleSendMessage} className="flex items-center gap-3">
         <div className="flex-1 flex items-center gap-3">
-          <input
+          <motion.input
+            whileFocus={{ scale: 1.01 }}
             type="text"
-            className="flex-1 border border-border rounded-lg px-4 py-2.5 bg-background-secondary text-text-color placeholder-text-secondary-color focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             placeholder="Type a message..."
             value={text}
             onChange={handleTextChange}
             onKeyPress={handleKeyPress}
             disabled={isSendingMessage}
-            aria-label="Type a message"
           />
           <input
             type="file"
@@ -266,30 +255,35 @@ const MessageInput = () => {
             ref={fileInputRef}
             onChange={handleImageChange}
             disabled={isSendingMessage}
-            aria-label="Upload image"
           />
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             type="button"
-            className={`p-2.5 rounded-full transition-all duration-200 ${
+            className={`p-3 rounded-xl transition-all ${
               imagePreview
-                ? "bg-blue-500 text-white hover:bg-blue-600 shadow-md"
-                : "text-text-secondary-color hover:bg-blue-50 dark:hover:bg-blue-500/20"
+                ? "bg-blue-500 text-white shadow-lg"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
             }`}
             onClick={() => fileInputRef.current?.click()}
             disabled={isSendingMessage}
-            aria-label="Attach image"
           >
             <Image size={20} />
-          </button>
+          </motion.button>
         </div>
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           type="submit"
-          className="p-2.5 rounded-full bg-blue-500 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+          className="p-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={(!text.trim() && !imagePreview) || !selectedUser || isSendingMessage}
-          aria-label="Send message"
         >
-          <Send size={20} />
-        </button>
+          {isSendingMessage ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <Send size={20} />
+          )}
+        </motion.button>
       </form>
     </div>
   );
