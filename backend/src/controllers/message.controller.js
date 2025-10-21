@@ -5,35 +5,47 @@ import { CloudinaryService } from "../services/cloudinary.service.js";
 import { getReceiverSocketId, io } from "../socket/socket.js";
 
 export const getMessages = async (req, res, next) => {
-  const { page = 1, limit = 50 } = req.query;
-  const skip = (page - 1) * limit;
+  try {
+    const { id: otherUserId } = req.params;
+    const myId = req.user._id;
 
-  const conversation = await Conversation.findOne({
-    participants: { $all: participants },
-    $expr: { $eq: [{ $size: "$participants" }, 2] }
-  });
-
-  if (!conversation) {
-    return res.status(200).json({
-      messages: [],
-      pagination: { page: 1, totalPages: 0, total: 0 }
-    });
-  }
-
-  const total = conversation.messages.length;
-  const messages = conversation.messages
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(skip, skip + limit)
-    .reverse();
-
-  res.status(200).json({
-    messages,
-    pagination: {
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
-      total
+    if (!mongoose.Types.ObjectId.isValid(otherUserId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
     }
-  });
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const conversation = await Conversation.findOne({
+      participants: { $all: [myId, otherUserId] },
+      $expr: { $eq: [{ $size: "$participants" }, 2] }
+    });
+
+    if (!conversation) {
+      return res.status(200).json({
+        messages: [],
+        pagination: { page: 1, totalPages: 0, total: 0 }
+      });
+    }
+
+    const total = conversation.messages.length;
+    const messages = [...conversation.messages]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(skip, skip + limit)
+      .reverse();
+
+    res.status(200).json({
+      messages,
+      pagination: {
+        page,
+        totalPages: Math.ceil(total / limit),
+        total
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const sendMessage = async (req, res, next) => {
